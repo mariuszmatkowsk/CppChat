@@ -1,6 +1,9 @@
 project($CMAKE_PROJECT_NAME)
 
+add_subdirectory(Channel)
+
 find_package(Curses REQUIRED)
+
 include_directories(${CURSES_INCLUDE_DIRS})
 
 include(FetchContent)
