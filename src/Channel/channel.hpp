@@ -14,13 +14,13 @@ struct Inner {
     std::deque<T> queue;
     std::mutex mutex;
     std::condition_variable available;
-    unsigned senders = 0;
+    unsigned senders = 1;
 };
 
 template <typename T>
 class Sender {
 public:
-    explicit constexpr Sender(std::shared_ptr<Inner<T>> inner) : inner_{inner} {}
+    Sender(std::shared_ptr<Inner<T>> inner) : inner_{std::move(inner)} {}
 
     Sender& operator=(const Sender& other) {
         std::lock_guard lock(other.inner_->mutex);
@@ -36,14 +36,19 @@ public:
     }
 
     ~Sender() {
-        std::lock_guard lock(this->inner_->mutex);
+        if (this->inner_) {
+            std::lock_guard lock(this->inner_->mutex);
 
-        this->inner_->senders--;
+            this->inner_->senders--;
 
-        if (this->inner_->senders == 0) {
-            this->inner_->available.notify_one();
+            if (this->inner_->senders == 0) {
+                this->inner_->available.notify_one();
+            }
         }
     }
+
+    Sender& operator=(Sender&&) = default;
+    Sender(Sender&&) = default;
 
     void send(const T& data) {
         {
@@ -61,7 +66,7 @@ private:
 template <typename T>
 class Receiver { 
 public:
-    explicit constexpr Receiver(std::shared_ptr<Inner<T>> inner) : inner_{inner} {}
+    Receiver(std::shared_ptr<Inner<T>> inner) : inner_{inner} {}
 
     Receiver& operator=(const Receiver&) = delete;
     Receiver(const Receiver&) = delete;
@@ -76,9 +81,9 @@ public:
 
         while(true) {
             if (!inner_->queue.empty()) {
-                auto first = inner_->queue.front();
+                auto data = inner_->queue.front();
                 inner_->queue.pop_front();
-                return first;
+                return data;
             } else if (inner_->senders == 0) {
                 return std::nullopt;
             } else {
@@ -91,7 +96,9 @@ public:
         std::lock_guard lock(inner_->mutex);
         
         if (!inner_->queue.empty()) {
-            return inner_->queue.pop_front();
+            auto data = inner_->queue.front();
+            inner_->queue.pop_front();
+            return data;
         }
 
         return std::nullopt;
@@ -105,9 +112,7 @@ private:
 template <typename T>
 std::tuple<Sender<T>, Receiver<T>> make_channel() {
     auto inner = std::make_shared<Inner<T>>();
-    auto sender = Sender<T>(inner);
-    auto receiver = Receiver<T>(inner);
-    return std::make_tuple(std::move(sender), std::move(receiver));
+    return std::make_tuple(Sender<T>(inner), Receiver<T>(inner));
 }
 
 }  // namespace mpsc
