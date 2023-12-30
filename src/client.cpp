@@ -1,33 +1,14 @@
 #include <iostream>
 #include <ncurses.h>
 
+#include "ScreenState/ScreenState.hpp"
+
 #define ctrl(x) (x & 0x1F)
 
 const short REGULAR_PAIR = 0;
 const short HIGHLIGHT_PAIR = 1;
 
-class ScreenState {
-public:
-    ScreenState() = default;
-
-    ScreenState &operator=(const ScreenState &) = delete;
-    ScreenState &operator=(ScreenState &&) = delete;
-    ScreenState(const ScreenState &) = delete;
-    ScreenState(ScreenState &&) = delete;
-
-    static ScreenState enable() {
-        initscr();
-        noecho();
-        curs_set(0); // Cursor invisible
-        raw();
-        start_color();
-        return ScreenState{};
-    }
-
-    ~ScreenState() { endwin(); }
-};
-
-void status_bar(const std::string &label, int x, int y, int width,
+void status_bar(const std::string& label, int x, int y, int width,
                 short color_pair) {
     auto n = label.length() - 1;
     auto WHITE_SPACE_N = width - n - 1;
@@ -65,6 +46,7 @@ int main() {
         default:
             break;
         }
+        refresh();
     }
 
     return 0;

@@ -1,6 +1,7 @@
 project($CMAKE_PROJECT_NAME)
 
 add_subdirectory(Channel)
+add_subdirectory(ScreenState)
 
 find_package(Curses REQUIRED)
 
