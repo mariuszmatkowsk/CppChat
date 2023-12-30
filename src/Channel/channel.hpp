@@ -49,10 +49,9 @@ public:
     Sender(Sender &&) = default;
 
     void send(const T &data) {
-        {
-            std::lock_guard lock(inner_->mutex);
-            inner_->queue.push_front(data);
-        }
+        std::unique_lock lock(inner_->mutex);
+        inner_->queue.push_front(data);
+        lock.unlock();
         inner_->available.notify_one();
     }
 
