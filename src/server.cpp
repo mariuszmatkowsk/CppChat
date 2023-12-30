@@ -1,17 +1,13 @@
 #include <asio.hpp>
 #include <format>
 #include <iostream>
-#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <variant>
 
 #include "Channel/channel.hpp"
 
-constexpr std::string_view hello_msg =
-    "Hello, you are now connected to the server...";
-
-constexpr std::string_view disconnect_msg = "You are now disconnected...";
+constexpr char hello_msg[] = "Hello, you are now connected to the server...\n";
 
 struct ClientConnected {
     std::shared_ptr<asio::ip::tcp::socket> socket;
@@ -43,8 +39,7 @@ public:
             socket->remote_endpoint().port());
 
         if (clients_.find(socket->remote_endpoint()) == std::end(clients_)) {
-            client_connected_msg.socket->write_some(
-                asio::buffer(hello_msg.data(), hello_msg.length()));
+            client_connected_msg.socket->write_some(asio::buffer(hello_msg));
             clients_.insert(std::make_pair(socket->remote_endpoint(), socket));
         }
     }
@@ -63,7 +58,13 @@ public:
         }
     }
 
-    void operator()(const NewMessage &new_message) {}
+    void operator()(const NewMessage &new_message) {
+        for (const auto &[client_ep, client_socket] : clients_) {
+            if (client_ep != new_message.endpoint) {
+                client_socket->write_some(asio::buffer(new_message.message));
+            }
+        }
+    }
 
 private:
     Clients &clients_;
@@ -79,13 +80,19 @@ void client(std::shared_ptr<asio::ip::tcp::socket> socket,
     std::vector<uint8_t> buffer(BUFFER_SIZE);
     while (true) {
         asio::error_code ec;
-        auto n = asio::read(*socket, asio::buffer(buffer, BUFFER_SIZE), ec);
+        auto n = socket->read_some(asio::buffer(buffer, BUFFER_SIZE), ec);
 
-        if (n == 0) {
+        if (ec == asio::error::eof) {
             sender.send(ClientDisconnected{socket->remote_endpoint()});
             return;
+        }
+
+        if (n == 0) {
+            continue;
         } else {
-            // TODO: New message to be handled
+            sender.send(
+                NewMessage{socket->remote_endpoint(),
+                           {std::begin(buffer), std::begin(buffer) + n}});
         }
     }
 }
@@ -103,8 +110,6 @@ template <typename T> void server(mpsc::Receiver<T> receiver) {
 
 int main() {
     asio::io_context ioc;
-    asio::error_code ec;
-
     asio::ip::tcp::endpoint endpoint(asio::ip::tcp::v4(), 6969);
 
     asio::ip::tcp::acceptor acceptor(ioc, endpoint);
@@ -113,6 +118,7 @@ int main() {
 
     std::thread(server<Message>, std::move(receiver)).detach();
 
+    std::cout << "Listening on port 6969 for new connections...\n";
     while (true) {
         asio::ip::tcp::socket socket(ioc);
         acceptor.accept(socket);
