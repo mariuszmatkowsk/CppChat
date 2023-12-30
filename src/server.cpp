@@ -11,6 +11,8 @@
 constexpr std::string_view hello_msg =
     "Hello, you are now connected to the server...";
 
+constexpr std::string_view disconnect_msg = "You are now disconnected...";
+
 struct ClientConnected {
     std::shared_ptr<asio::ip::tcp::socket> socket;
 };
@@ -21,7 +23,7 @@ struct ClientDisconnected {
 
 struct NewMessage {
     asio::ip::tcp::endpoint endpoint;
-    std::string message;
+    std::vector<uint8_t> message;
 };
 
 using Message = std::variant<ClientConnected, ClientDisconnected, NewMessage>;
@@ -47,7 +49,19 @@ public:
         }
     }
 
-    void operator()(const ClientDisconnected &client_disconnected_msg) {}
+    void operator()(const ClientDisconnected &client_disconnected_msg) {
+        std::cout << "Handle client disconnection in server function\n";
+        auto it = clients_.find(client_disconnected_msg.endpoint);
+        if (it != std::end(clients_)) {
+            const auto &socket = it->second;
+
+            std::cout << std::format(
+                "Client with address {}:{} has been disconnected\n",
+                it->first.address().to_string(), it->first.port());
+
+            clients_.erase(it);
+        }
+    }
 
     void operator()(const NewMessage &new_message) {}
 
@@ -56,37 +70,32 @@ private:
 };
 
 template <typename T>
-void client(std::shared_ptr<asio::ip::tcp::socket> soc,
+void client(std::shared_ptr<asio::ip::tcp::socket> socket,
             mpsc::Sender<T> sender) {
 
-    sender.send(ClientConnected{soc});
+    sender.send(ClientConnected{socket});
 
+    constexpr size_t BUFFER_SIZE = 1024;
+    std::vector<uint8_t> buffer(BUFFER_SIZE);
     while (true) {
+        asio::error_code ec;
+        auto n = asio::read(*socket, asio::buffer(buffer, BUFFER_SIZE), ec);
+
+        if (n == 0) {
+            sender.send(ClientDisconnected{socket->remote_endpoint()});
+            return;
+        } else {
+            // TODO: New message to be handled
+        }
     }
 }
 
 template <typename T> void server(mpsc::Receiver<T> receiver) {
     Clients clients;
-
     MessageHandler message_handler(clients);
 
     while (true) {
         if (auto message = receiver.recv()) {
-            // if (std::holds_alternative<ClientConnected>(*message)) {
-            //     const auto& client_connected =
-            //     std::get<ClientConnected>(*message);
-            //     // Handle client connected
-            //     //
-            // } else if (std::holds_alternative<ClientDisconnected>(*message))
-            // {
-            //     const auto& client_disconnected =
-            //     std::get<ClientDisconnected>(*message);
-            //     // Handle Client Disconnected
-            // } else {
-            //     const auto& new_message =
-            //     std::get<ClientDisconnected>(*message);
-            //     // Handle NewMessage
-            // }
             std::visit(message_handler, *message);
         }
     }
