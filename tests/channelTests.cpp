@@ -5,11 +5,11 @@
 
 #include <Channel/channel.hpp>
 
-TEST(make_channel, canCreateSenderAndReceiverWithBuilinType) {
+TEST(channel, canCreateSenderAndReceiverWithBuiltInType) {
     auto [sender, receiver] = mpsc::make_channel<int>();
 }
 
-TEST(make_channel, canCreateSenderAndReceiverWithCustomType) {
+TEST(channel, canCreateSenderAndReceiverWithCustomType) {
     struct Foo {
         int a;
         std::string msg;
@@ -19,7 +19,6 @@ TEST(make_channel, canCreateSenderAndReceiverWithCustomType) {
     auto [sender, receiver] = mpsc::make_channel<Foo>();
 }
 
-
 TEST(channel, pingPong) {
     auto [sender, receiver] = mpsc::make_channel<int>();
 
@@ -28,13 +27,23 @@ TEST(channel, pingPong) {
     EXPECT_EQ(receiver.recv(), 5);
 }
 
-TEST(channel, dropSender) {
-    auto [sender, receiver] = mpsc::make_channel<double>();
+TEST(channel, senderClose) {
+    auto [sender, receiver] = mpsc::make_channel<int>();
 
     {
         auto _ = std::move(sender);
     }
 
     EXPECT_EQ(receiver.recv(), std::nullopt);
+}
+
+TEST(channel, receiverClose) {
+    auto [sender, receiver] = mpsc::make_channel<int>();
+
+    {
+        auto _ = std::move(receiver);
+    }
+
+    sender.send(10);
 }
 
