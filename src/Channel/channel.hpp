@@ -1,35 +1,33 @@
 #pragma once
 
-#include <tuple>
-#include <deque>
-#include <mutex>
-#include <memory>
-#include <optional>
 #include <condition_variable>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <tuple>
 
 namespace mpsc {
 
-template <typename T>
-struct Inner {
+template <typename T> struct Inner {
     std::deque<T> queue;
     std::mutex mutex;
     std::condition_variable available;
     unsigned senders = 1;
 };
 
-template <typename T>
-class Sender {
+template <typename T> class Sender {
 public:
     Sender(std::shared_ptr<Inner<T>> inner) : inner_{std::move(inner)} {}
 
-    Sender& operator=(const Sender& other) {
+    Sender &operator=(const Sender &other) {
         std::lock_guard lock(other.inner_->mutex);
         other.inner_->senders++;
         this->inner_ = other.inner_;
         return *this;
     }
 
-    Sender(const Sender& other) {
+    Sender(const Sender &other) {
         std::lock_guard lock(other.inner_->mutex);
         other.inner_->senders++;
         this->inner_ = other.inner_;
@@ -47,10 +45,10 @@ public:
         }
     }
 
-    Sender& operator=(Sender&&) = default;
-    Sender(Sender&&) = default;
+    Sender &operator=(Sender &&) = default;
+    Sender(Sender &&) = default;
 
-    void send(const T& data) {
+    void send(const T &data) {
         {
             std::lock_guard lock(inner_->mutex);
             inner_->queue.push_front(data);
@@ -58,28 +56,26 @@ public:
         inner_->available.notify_one();
     }
 
-
 private:
     std::shared_ptr<Inner<T>> inner_;
 };
 
-template <typename T>
-class Receiver { 
+template <typename T> class Receiver {
 public:
     Receiver(std::shared_ptr<Inner<T>> inner) : inner_{inner} {}
 
-    Receiver& operator=(const Receiver&) = delete;
-    Receiver(const Receiver&) = delete;
+    Receiver &operator=(const Receiver &) = delete;
+    Receiver(const Receiver &) = delete;
 
-    Receiver& operator=(Receiver&&) = default;
-    Receiver(Receiver&&) = default;
+    Receiver &operator=(Receiver &&) = default;
+    Receiver(Receiver &&) = default;
 
     ~Receiver() = default;
 
     std::optional<T> recv() {
         std::unique_lock lock(inner_->mutex);
 
-        while(true) {
+        while (true) {
             if (!inner_->queue.empty()) {
                 auto data = inner_->queue.front();
                 inner_->queue.pop_front();
@@ -88,13 +84,13 @@ public:
                 return std::nullopt;
             } else {
                 inner_->available.wait(lock);
-            }              
+            }
         }
     }
 
     std::optional<T> try_recv() {
         std::lock_guard lock(inner_->mutex);
-        
+
         if (!inner_->queue.empty()) {
             auto data = inner_->queue.front();
             inner_->queue.pop_front();
@@ -104,16 +100,13 @@ public:
         return std::nullopt;
     }
 
-
 private:
     std::shared_ptr<Inner<T>> inner_;
 };
 
-template <typename T>
-std::tuple<Sender<T>, Receiver<T>> make_channel() {
+template <typename T> std::tuple<Sender<T>, Receiver<T>> make_channel() {
     auto inner = std::make_shared<Inner<T>>();
     return std::make_tuple(Sender<T>(inner), Receiver<T>(inner));
 }
 
-}  // namespace mpsc
- 
+} // namespace mpsc

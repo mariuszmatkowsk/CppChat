@@ -30,9 +30,7 @@ TEST(channel, pingPong) {
 TEST(channel, senderClose) {
     auto [sender, receiver] = mpsc::make_channel<int>();
 
-    {
-        auto _ = std::move(sender);
-    }
+    { auto _ = std::move(sender); }
 
     EXPECT_EQ(receiver.recv(), std::nullopt);
 }
@@ -40,10 +38,7 @@ TEST(channel, senderClose) {
 TEST(channel, receiverClose) {
     auto [sender, receiver] = mpsc::make_channel<int>();
 
-    {
-        auto _ = std::move(receiver);
-    }
+    { auto _ = std::move(receiver); }
 
     sender.send(10);
 }
-

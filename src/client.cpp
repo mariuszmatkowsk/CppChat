@@ -13,14 +13,13 @@ int main() {
 
     while (!quit) {
         switch (auto ch = getch()) {
-            case ctrl('c'):
-                quit = true;
-                break;
-            default:
-                break;
+        case ctrl('c'):
+            quit = true;
+            break;
+        default:
+            break;
         }
     }
-
 
     return 0;
 }
