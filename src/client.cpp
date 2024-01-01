@@ -1,5 +1,5 @@
 #include <cctype>
-#include <iostream>
+#include <string>
 #include <ncurses.h>
 #include <vector>
 
