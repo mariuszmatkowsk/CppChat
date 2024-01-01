@@ -10,6 +10,8 @@
 enum Color : short {
     Regular = 0,
     Highlight,
+    Error,
+    Info,
 };
 
 class Prompt {
@@ -63,6 +65,18 @@ private:
     std::vector<std::pair<std::string, Color>> items_;
 };
 
+inline void msg(ChatLog& chat, std::string message) {
+    chat.put(std::move(message), Color::Regular);
+}
+
+inline void err_msg(ChatLog& chat, std::string message) {
+    chat.put(std::move(message), Color::Error);
+}
+
+inline void info_msg(ChatLog& chat, std::string message) {
+    chat.put(std::move(message), Color::Info);
+}
+
 struct Client {
     ChatLog chat;
     bool quit = false;
@@ -88,30 +102,38 @@ int main() {
     Prompt prompt{};
 
     auto _screen_state = ScreenState::enable();
+    nodelay(stdscr, true);
 
     init_pair(Color::Regular, COLOR_WHITE, COLOR_BLACK);
     init_pair(Color::Highlight, COLOR_BLACK, COLOR_WHITE);
+    init_pair(Color::Error, COLOR_RED, COLOR_BLACK);
+    init_pair(Color::Info, COLOR_BLUE, COLOR_BLACK);
 
     int x, y;
     getmaxyx(stdscr, y, x);
 
-    status_bar("CppChat", 0, 0, x, Color::Highlight);
-
-    status_bar("Offline", 0, y - 2, x, Color::Highlight);
-
     while (!client.quit) {
-        switch (auto ch = getch()) {
-            case ctrl('c'):
-                client.quit = true;
-                break;
-            case '\n': // Handle Error Key
-                client.chat.put(prompt.getPromptString());
-                prompt.clear();
-                break;
-            default:
-                if (std::isprint(ch)) {
-                    prompt.put(ch);
-                }
+        auto ch = getch();
+        if (ch != ERR) {
+            switch (ch) {
+                case ctrl('c'):
+                    client.quit = true;
+                    break;
+                case KEY_DC: // Handle backspace
+                case 127:
+                case KEY_BACKSPACE:
+                    // TODO: handle backspace
+
+                    break;
+                case '\n': // Handle Error Key
+                    msg(client.chat, prompt.getPromptString());
+                    prompt.clear();
+                    break;
+                default:
+                    if (std::isprint(ch)) {
+                        prompt.put(ch);
+                    }
+            }
         }
 
         status_bar("CppChat", 0, 0, x, Color::Highlight);
