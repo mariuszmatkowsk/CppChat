@@ -1,3 +1,4 @@
+#include <asio.hpp>
 #include <cctype>
 #include <string>
 #include <ncurses.h>
@@ -78,9 +79,24 @@ inline void info_msg(ChatLog& chat, std::string message) {
 }
 
 struct Client {
+    std::unique_ptr<asio::ip::tcp::socket> socket;
     ChatLog chat;
     bool quit = false;
 };
+
+void connect(Client& client) {
+    asio::io_context ioc;
+    asio::ip::tcp::endpoint endpoint(
+        asio::ip::address_v4::from_string("127.0.0.1"), 6969);
+    asio::ip::tcp::socket socket(ioc);
+    socket.connect(endpoint);
+    client.socket = std::make_unique<asio::ip::tcp::socket>(std::move(socket));
+}
+
+void disconnect(Client& client) {
+    client.socket->close();
+    client.socket.reset();
+}
 
 void status_bar(const std::string& label, int x, int y, int width,
                 Color color) {
@@ -95,6 +111,26 @@ void status_bar(const std::string& label, int x, int y, int width,
     printw(spaces.c_str(), "%s");
 
     attroff(COLOR_PAIR(color));
+}
+
+std::pair<std::optional<std::string>, std::optional<std::string>>
+parse_prompt(std::string prompt) {
+    auto prefix_pos = prompt.find('/');
+    if (prefix_pos != 0) {
+        return std::pair(std::nullopt, std::nullopt);
+    }
+
+    // remove / from string
+    prompt.erase(0, 1);
+
+    auto space_pos = prompt.find(' ');
+
+    if (space_pos != std::string::npos) {
+        return std::pair(prompt.substr(0, space_pos),
+                         prompt.substr(space_pos + 1));
+    }
+    // There is no space return whole string
+    return std::pair(prompt, std::nullopt);
 }
 
 int main() {
@@ -126,9 +162,22 @@ int main() {
 
                     break;
                 case '\n': // Handle Error Key
-                    msg(client.chat, prompt.getPromptString());
+                {
+                    auto prompt_msg = prompt.getPromptString();
+                    const auto& [command, arggument] = parse_prompt(prompt_msg);
+
+                    if (command) {
+                        if (*command == "connect") {
+                            connect(client);
+                        } else if (*command == "disconnect") {
+                            disconnect(client);
+                        }
+                    } else {
+                        msg(client.chat, prompt.getPromptString());
+                    }
                     prompt.clear();
                     break;
+                }
                 default:
                     if (std::isprint(ch)) {
                         prompt.put(ch);
@@ -137,8 +186,14 @@ int main() {
         }
 
         status_bar("CppChat", 0, 0, x, Color::Highlight);
+
         client.chat.render(0, 1);
-        status_bar("Offline", 0, y - 2, x, Color::Highlight);
+
+        if (client.socket)
+            status_bar("Online", 0, y - 2, x, Color::Highlight);
+        else
+            status_bar("Offline", 0, y - 2, x, Color::Highlight);
+
         prompt.render(0, y - 1, x);
 
         refresh();
