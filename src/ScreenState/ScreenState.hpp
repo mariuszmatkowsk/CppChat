@@ -14,7 +14,7 @@ public:
     static ScreenState enable() {
         initscr();
         noecho();
-        curs_set(0); // Cursor invisible
+        // curs_set(1); // Cursor invisible
         cbreak();
         start_color();
         return ScreenState{};

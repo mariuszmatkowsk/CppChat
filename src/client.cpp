@@ -1,4 +1,5 @@
 #include <array>
+#include <algorithm>
 #include <asio.hpp>
 #include <cctype>
 #include <string>
@@ -18,15 +19,26 @@ enum Color : short {
 
 class Prompt {
 public:
-    void put(char ch) { data_.push_back(ch); }
+    void put(char ch) {
+        data_.insert(std::begin(data_) + cursor_, ch);
+        cursor_++;
+    }
 
-    void clear() { data_.clear(); }
+    void clear() {
+        data_.clear();
+        cursor_ = 0;
+    }
 
     std::string getPromptString() const {
         return {std::begin(data_), std::end(data_)};
     }
 
-    void render(int x, int y, int width) {
+    void sync_cursor_with_terminal(unsigned x, unsigned y, unsigned width) {
+        const auto cursor_pos = std::min(x + cursor_, width);
+        move(y, cursor_pos);
+    }
+
+    void render(unsigned x, unsigned y, unsigned width) {
         auto start_x = data_.size() + x;
         auto WHITE_SPACE_N = width - start_x;
 
@@ -45,6 +57,7 @@ public:
 
 private:
     std::vector<char> data_;
+    unsigned cursor_;
 };
 
 class ChatLog {
@@ -225,6 +238,7 @@ int main() {
             status_bar("Offline", 0, y - 2, x, Color::Highlight);
 
         prompt.render(0, y - 1, x);
+        prompt.sync_cursor_with_terminal(0, y - 1, x);
 
         refresh();
     }
