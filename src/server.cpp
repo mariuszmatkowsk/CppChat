@@ -28,10 +28,10 @@ using Clients = std::unordered_map<asio::ip::tcp::endpoint,
 
 class MessageHandler {
 public:
-    MessageHandler(Clients &clients) : clients_(clients) {}
+    MessageHandler(Clients& clients) : clients_(clients) {}
 
-    void operator()(const ClientConnected &client_connected_msg) {
-        const auto &socket = client_connected_msg.socket;
+    void operator()(const ClientConnected& client_connected_msg) {
+        const auto& socket = client_connected_msg.socket;
 
         std::cout << std::format(
             "New connection from: {}:{}\n",
@@ -44,11 +44,11 @@ public:
         }
     }
 
-    void operator()(const ClientDisconnected &client_disconnected_msg) {
+    void operator()(const ClientDisconnected& client_disconnected_msg) {
         std::cout << "Handle client disconnection in server function\n";
         auto it = clients_.find(client_disconnected_msg.endpoint);
         if (it != std::end(clients_)) {
-            const auto &socket = it->second;
+            const auto& socket = it->second;
 
             std::cout << std::format(
                 "Client with address {}:{} has been disconnected\n",
@@ -58,8 +58,8 @@ public:
         }
     }
 
-    void operator()(const NewMessage &new_message) {
-        for (const auto &[client_ep, client_socket] : clients_) {
+    void operator()(const NewMessage& new_message) {
+        for (const auto& [client_ep, client_socket] : clients_) {
             if (client_ep != new_message.endpoint) {
                 client_socket->write_some(asio::buffer(new_message.message));
             }
@@ -67,7 +67,7 @@ public:
     }
 
 private:
-    Clients &clients_;
+    Clients& clients_;
 };
 
 template <typename T>
@@ -76,6 +76,8 @@ void client(std::shared_ptr<asio::ip::tcp::socket> socket,
 
     sender.send(ClientConnected{socket});
 
+    const auto remote_endpoint = socket->remote_endpoint();
+
     constexpr size_t BUFFER_SIZE = 1024;
     std::vector<uint8_t> buffer(BUFFER_SIZE);
     while (true) {
@@ -83,16 +85,15 @@ void client(std::shared_ptr<asio::ip::tcp::socket> socket,
         auto n = socket->read_some(asio::buffer(buffer, BUFFER_SIZE), ec);
 
         if (ec == asio::error::eof) {
-            sender.send(ClientDisconnected{socket->remote_endpoint()});
+            sender.send(ClientDisconnected{remote_endpoint});
             return;
         }
 
         if (n == 0) {
             continue;
         } else {
-            sender.send(
-                NewMessage{socket->remote_endpoint(),
-                           {std::begin(buffer), std::begin(buffer) + n}});
+            sender.send(NewMessage{
+                remote_endpoint, {std::begin(buffer), std::begin(buffer) + n}});
         }
     }
 }
