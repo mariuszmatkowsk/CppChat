@@ -1,9 +1,9 @@
-#include <array>
 #include <algorithm>
+#include <array>
 #include <asio.hpp>
 #include <cctype>
-#include <string>
 #include <ncurses.h>
+#include <string>
 #include <vector>
 
 #include "ScreenState/ScreenState.hpp"
@@ -22,6 +22,21 @@ public:
     void put(char ch) {
         data_.insert(std::begin(data_) + cursor_, ch);
         cursor_++;
+    }
+
+    void backspace() {
+        if (cursor_ == 0)
+            return;
+        data_.erase(std::begin(data_) + cursor_ - 1);
+        cursor_--;
+    }
+
+    void move_cursor_left() {
+        cursor_ = cursor_ == 0 ? 0 : cursor_ - 1;
+    }
+
+    void move_cursor_right() {
+        cursor_ = cursor_ == data_.size() ? cursor_ : cursor_ + 1;
     }
 
     void clear() {
@@ -120,7 +135,9 @@ void disconnect_client(Client& client, const std::string& = "") {
     client.socket.reset();
 }
 
-void quit(Client& client, const std::string& = "") { client.quit = true; }
+void quit(Client& client, const std::string& = "") {
+    client.quit = true;
+}
 
 void status_bar(const std::string& label, int x, int y, int width,
                 Color color) {
@@ -196,16 +213,20 @@ int main() {
                 case ctrl('c'):
                     quit(client);
                     break;
-                case KEY_DC: // Handle backspace
+                case ctrl('h'):
+                    prompt.move_cursor_left();
+                    break;
+                case ctrl('l'):
+                    prompt.move_cursor_right();
+                    break;
                 case 127:
                 case KEY_BACKSPACE:
-                    // TODO: handle backspace
-
+                    prompt.backspace();
                     break;
                 case '\n': // Handle Error Key
                 {
                     auto prompt_msg = prompt.getPromptString();
-                    const auto parsed_prompt =parse_prompt(prompt_msg);
+                    const auto parsed_prompt = parse_prompt(prompt_msg);
 
                     if (parsed_prompt) {
                         const auto [command, argument] = *parsed_prompt;
