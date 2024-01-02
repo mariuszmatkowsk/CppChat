@@ -10,6 +10,8 @@
 
 #define ctrl(x) (x & 0x1F)
 
+constexpr size_t BUFFER_SIZE = 1024;
+
 enum Color : short {
     Regular = 0,
     Highlight,
@@ -54,10 +56,8 @@ public:
     }
 
     void render(unsigned x, unsigned y, unsigned width) {
-        auto start_x = data_.size() + x;
-        auto WHITE_SPACE_N = width - start_x;
-
-        std::string spaces(WHITE_SPACE_N, ' ');
+        auto spaces_start_pos = data_.size() + x;
+        std::string spaces(width - spaces_start_pos, ' ');
 
         attron(COLOR_PAIR(Color::Regular));
         if (!data_.empty()) {
@@ -65,7 +65,7 @@ public:
             printw(std::string(std::begin(data_), std::end(data_)).c_str(),
                    "%s");
         }
-        move(y, start_x);
+        move(y, spaces_start_pos);
         printw(spaces.c_str(), "%s");
         attroff(COLOR_PAIR(Color::Regular));
     }
@@ -120,25 +120,6 @@ struct Command {
     std::function<void(Client&, const std::string&)> run;
 };
 
-void connect_client(Client& client, const std::string& address) {
-    asio::io_context ioc;
-    // TODO: handle error when address has wrong format, or is empty
-    asio::ip::tcp::endpoint endpoint(asio::ip::address_v4::from_string(address),
-                                     6969);
-    asio::ip::tcp::socket socket(ioc);
-    socket.connect(endpoint);
-    client.socket = std::make_unique<asio::ip::tcp::socket>(std::move(socket));
-}
-
-void disconnect_client(Client& client, const std::string& = "") {
-    client.socket->close();
-    client.socket.reset();
-}
-
-void quit(Client& client, const std::string& = "") {
-    client.quit = true;
-}
-
 void status_bar(const std::string& label, int x, int y, int width,
                 Color color) {
     auto n = label.length() - 1;
@@ -174,14 +155,20 @@ parse_prompt(std::string prompt) {
     return std::pair(prompt, std::string{});
 }
 
-const std::array<Command, 3> COMMANDS = {
+void connect_client(Client& client, const std::string& address);
+void disconnect_client(Client& client, const std::string& = "");
+void quit(Client& client, const std::string& = "");
+void help_command(Client& client, const std::string& = "");
+
+const std::array<Command, 4> COMMANDS = {
     Command{"connect", "Connect to a server by <ip>", "/connect <ip>",
             connect_client},
     Command{"disconnect", "Disconnect from the server", "/disconnect",
             disconnect_client},
-    Command{"quit", "Close the chat", "/quit", quit}};
+    Command{"quit", "Close the chat", "/quit", quit},
+    Command{"help", "Print help", "/help [command]", help_command}};
 
-const Command *find_command(const std::string& name) {
+const Command* find_command(const std::string& name) {
     auto it = std::find_if(
         std::begin(COMMANDS), std::end(COMMANDS),
         [&name](const auto& command) { return command.name == name; });
@@ -191,12 +178,43 @@ const Command *find_command(const std::string& name) {
     return &(*it);
 }
 
+void connect_client(Client& client, const std::string& address) {
+    asio::io_context ioc;
+    // TODO: handle error when address has wrong format, or is empty
+    asio::ip::tcp::endpoint endpoint(asio::ip::address_v4::from_string(address),
+                                     6969);
+    asio::ip::tcp::socket socket(ioc);
+    socket.connect(endpoint);
+    client.socket = std::make_unique<asio::ip::tcp::socket>(std::move(socket));
+}
+
+void disconnect_client(Client& client, const std::string&) {
+    if (client.socket) {
+        client.socket->close();
+        client.socket.reset();
+    } else {
+        info_msg(client.chat, "You are currently disconnected. To connect use "
+                              "/connect <ip>");
+    }
+}
+
+void quit(Client& client, const std::string&) {
+    client.quit = true;
+}
+
+void help_command(Client& client, const std::string&) {
+    for (const auto& command : COMMANDS) {
+        std::stringstream ss;
+        ss << command.signature << " - " << command.description;
+        info_msg(client.chat, ss.str());
+    }
+}
+
 int main() {
     Client client{};
     Prompt prompt{};
 
     auto _screen_state = ScreenState::enable();
-    nodelay(stdscr, true);
 
     init_pair(Color::Regular, COLOR_WHITE, COLOR_BLACK);
     init_pair(Color::Highlight, COLOR_BLACK, COLOR_WHITE);
@@ -205,6 +223,8 @@ int main() {
 
     int x, y;
     getmaxyx(stdscr, y, x);
+
+    std::vector<char> data_buffer(BUFFER_SIZE);
 
     while (!client.quit) {
         auto ch = getch();
@@ -237,7 +257,14 @@ int main() {
                             err_msg(client.chat, "Unknown command");
                         }
                     } else {
-                        msg(client.chat, prompt.getPromptString());
+                        if (client.socket) {
+                            client.socket->write_some(
+                                asio::buffer(prompt.getPromptString()));
+                            msg(client.chat, prompt.getPromptString());
+                        } else {
+                            msg(client.chat,
+                                "To send message you need to be Online");
+                        }
                     }
                     prompt.clear();
                     break;
@@ -246,6 +273,17 @@ int main() {
                     if (std::isprint(ch)) {
                         prompt.put(ch);
                     }
+            }
+        }
+
+        if (client.socket) {
+            if (client.socket->available() > 0) {
+                const auto n = client.socket->read_some(
+                    asio::buffer(data_buffer, data_buffer.size()));
+                if (n > 0) {
+                    msg(client.chat, std::string(std::begin(data_buffer),
+                                                 std::begin(data_buffer) + n));
+                }
             }
         }
 
@@ -259,6 +297,7 @@ int main() {
             status_bar("Offline", 0, y - 2, x, Color::Highlight);
 
         prompt.render(0, y - 1, x);
+
         prompt.sync_cursor_with_terminal(0, y - 1, x);
 
         refresh();

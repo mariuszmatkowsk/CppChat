@@ -17,6 +17,7 @@ public:
         // curs_set(1); // Cursor invisible
         cbreak();
         start_color();
+        nodelay(stdscr, true);
         return ScreenState{};
     }
 
