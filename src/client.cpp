@@ -1,3 +1,4 @@
+#include <array>
 #include <asio.hpp>
 #include <cctype>
 #include <string>
@@ -84,19 +85,29 @@ struct Client {
     bool quit = false;
 };
 
-void connect(Client& client) {
+struct Command {
+    std::string name;
+    std::string description;
+    std::string signature;
+    std::function<void(Client&, const std::string&)> run;
+};
+
+void connect_client(Client& client, const std::string& address) {
     asio::io_context ioc;
-    asio::ip::tcp::endpoint endpoint(
-        asio::ip::address_v4::from_string("127.0.0.1"), 6969);
+    // TODO: handle error when address has wrong format, or is empty
+    asio::ip::tcp::endpoint endpoint(asio::ip::address_v4::from_string(address),
+                                     6969);
     asio::ip::tcp::socket socket(ioc);
     socket.connect(endpoint);
     client.socket = std::make_unique<asio::ip::tcp::socket>(std::move(socket));
 }
 
-void disconnect(Client& client) {
+void disconnect_client(Client& client, const std::string& = "") {
     client.socket->close();
     client.socket.reset();
 }
+
+void quit(Client& client, const std::string& = "") { client.quit = true; }
 
 void status_bar(const std::string& label, int x, int y, int width,
                 Color color) {
@@ -113,14 +124,14 @@ void status_bar(const std::string& label, int x, int y, int width,
     attroff(COLOR_PAIR(color));
 }
 
-std::pair<std::optional<std::string>, std::optional<std::string>>
+std::optional<std::pair<std::string, std::string>>
 parse_prompt(std::string prompt) {
     auto prefix_pos = prompt.find('/');
     if (prefix_pos != 0) {
-        return std::pair(std::nullopt, std::nullopt);
+        return std::nullopt;
     }
 
-    // remove / from string
+    // remove '/' from string
     prompt.erase(0, 1);
 
     auto space_pos = prompt.find(' ');
@@ -129,8 +140,25 @@ parse_prompt(std::string prompt) {
         return std::pair(prompt.substr(0, space_pos),
                          prompt.substr(space_pos + 1));
     }
-    // There is no space return whole string
-    return std::pair(prompt, std::nullopt);
+    // There is no argument, return whole string
+    return std::pair(prompt, std::string{});
+}
+
+const std::array<Command, 3> COMMANDS = {
+    Command{"connect", "Connect to a server by <ip>", "/connect <ip>",
+            connect_client},
+    Command{"disconnect", "Disconnect from the server", "/disconnect",
+            disconnect_client},
+    Command{"quit", "Close the chat", "/quit", quit}};
+
+const Command *find_command(const std::string& name) {
+    auto it = std::find_if(
+        std::begin(COMMANDS), std::end(COMMANDS),
+        [&name](const auto& command) { return command.name == name; });
+    if (it == std::end(COMMANDS)) {
+        return nullptr;
+    }
+    return &(*it);
 }
 
 int main() {
@@ -153,7 +181,7 @@ int main() {
         if (ch != ERR) {
             switch (ch) {
                 case ctrl('c'):
-                    client.quit = true;
+                    quit(client);
                     break;
                 case KEY_DC: // Handle backspace
                 case 127:
@@ -164,13 +192,15 @@ int main() {
                 case '\n': // Handle Error Key
                 {
                     auto prompt_msg = prompt.getPromptString();
-                    const auto& [command, arggument] = parse_prompt(prompt_msg);
+                    const auto parsed_prompt =parse_prompt(prompt_msg);
 
-                    if (command) {
-                        if (*command == "connect") {
-                            connect(client);
-                        } else if (*command == "disconnect") {
-                            disconnect(client);
+                    if (parsed_prompt) {
+                        const auto [command, argument] = *parsed_prompt;
+                        const auto command_ptr = find_command(command);
+                        if (command_ptr) {
+                            command_ptr->run(client, argument);
+                        } else {
+                            err_msg(client.chat, "Unknown command");
                         }
                     } else {
                         msg(client.chat, prompt.getPromptString());
